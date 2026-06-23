@@ -225,6 +225,14 @@ fun SettingsScreen(
             color = TextDis, fontSize = 11.sp, fontFamily = GeistMonoFamily,
             modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 10.dp),
         )
+        Text(
+            "Independent community project — not affiliated with, endorsed by, or supported by " +
+                "Royal Enfield. \"Royal Enfield\", \"Himalayan\" and \"Tripper\" are trademarks of " +
+                "their respective owners, used here only to describe compatible hardware. The dash " +
+                "link is unofficial and independent for interoperability — use at your own risk.",
+            color = TextDis, fontSize = 10.sp, fontFamily = GeistFamily,
+            modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp, start = 8.dp, end = 8.dp),
+        )
     }
 }
 

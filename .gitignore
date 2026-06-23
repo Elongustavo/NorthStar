@@ -23,7 +23,12 @@ app/google-services.json
 /dist/
 *.apk
 # Per-version release folders (APK + changelog) kept locally, untracked.
-/version 1.3/
+/version */
+
+# Device logs / captures — may contain tokens, account data, or RE-app traces. NEVER commit.
+*.log
+/captures/
+* trace
 
 # Release signing — the private key + its credentials. NEVER commit these.
 signing.properties

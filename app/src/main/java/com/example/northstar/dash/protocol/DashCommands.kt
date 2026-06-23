@@ -3,8 +3,10 @@ package com.example.northstar.dash.protocol
 import java.io.ByteArrayOutputStream
 
 /**
- * K1G commands ported from better-dash (tripper_app_like_nav.py),
- * which was reconstructed from the dash + packet captures.
+ * K1G control-plane commands — an independent Kotlin implementation of the dash's
+ * documented protocol behaviour, cross-checked against the open-source better-dash
+ * reference (Apache-2.0; see NOTICE) and against traffic observed on firmware 11.63.
+ * These are interoperability facts (packet layouts), not copied source.
  */
 object DashCommands {
 

@@ -117,3 +117,18 @@ This started as a personal project and is now open for other Himalayan / Tripper
 - real-ride battery/thermal numbers with the screen off.
 
 If it helps you keep your phone cool on a ride, that's the win.
+
+---
+
+## License
+
+Licensed under the **Apache License, Version 2.0** — see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
+
+The dash protocol understanding is cross-checked against the open-source
+[better-dash](https://github.com/norbertFeron/better-dash) project (also Apache-2.0); see `NOTICE`
+for attribution.
+
+**Trademarks / affiliation:** Northstar is an independent community project and is **not affiliated
+with, endorsed by, or supported by Royal Enfield**. "Royal Enfield", "Himalayan", and "Tripper" are
+trademarks of their respective owners, used here only descriptively to identify compatible hardware.
+The dash link is unofficial and independent for interoperability — use at your own risk.

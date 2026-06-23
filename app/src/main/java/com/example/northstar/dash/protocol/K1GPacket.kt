@@ -3,7 +3,8 @@ package com.example.northstar.dash.protocol
 import java.io.ByteArrayOutputStream
 
 /**
- * K1G packet format — verified against better-dash (tripper_app_like_nav.py).
+ * K1G packet format — cross-checked against the open-source better-dash reference
+ * (Apache-2.0; see NOTICE) and traffic observed on firmware 11.63.
  *
  * OUTGOING (app → dash), big-endian:
  *   [0:2]  outer_len   – total packet size including this field

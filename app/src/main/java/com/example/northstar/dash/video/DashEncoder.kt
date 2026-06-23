@@ -14,8 +14,8 @@ import android.view.Surface
  *   526 × 300, Baseline L4.1, 1-second IDR interval.
  *
  * Cadence/bitrate are DRIVEN BY THE FRAME LOOP, not fixed here — see DashViewModel's motion-adaptive
- * pacing. This mirrors what the dash actually does (confirmed by measuring
- * the dash app, 2026-06): it projects the map at only **2–4 fps / 100–200 kbps**, with
+ * pacing. This matches the stream envelope observed on the wire from the dash on firmware
+ * 11.63 (2026-06): the map is projected at only **2–4 fps / 100–200 kbps**, with
  * two profiles it switches between. A map doesn't need video frame rates, and crucially a few fps
  * NEVER overruns the dash decoder — which is the real cause of the blink/stutter we kept fighting at
  * 24 fps. So we match the dash'sproven-stable envelope: configure at the ACTIVE profile (4 fps hint,
