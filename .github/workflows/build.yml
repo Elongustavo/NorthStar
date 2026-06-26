@@ -1,0 +1,30 @@
+name: Build Northstar APK
+
+on:
+  workflow_dispatch:
+  push:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Instalar plataforma Android 36
+        run: yes | sdkmanager "platforms;android-36" || true
+
+      - name: Compilar APK (debug)
+        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: northstar-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
