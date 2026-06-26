@@ -13,11 +13,6 @@ import com.example.northstar.dash.nav.GeoPoint
 
 /**
  * Draws the navigation frame for the Tripper Dash (526 × 300).
- *
- * Layers: OSM tiles (already dark-filtered by TileProvider) → road route polyline
- * → destination pin → rider marker → top banner (name + remaining) → maneuver chip.
- * Optional heading-up rotation. Paint/Path/Rect objects are reused across frames
- * to avoid per-frame allocation churn.
  */
 class MapRenderer(private val tiles: TileProvider) {
 
@@ -28,30 +23,27 @@ class MapRenderer(private val tiles: TileProvider) {
         val panX: Float = 0f,
         val panY: Float = 0f,
         val headingUp: Boolean = false,
-        val heading: Float = 0f,           // travel bearing, degrees
+        val heading: Float = 0f,
         val riderLat: Double? = null,
         val riderLng: Double? = null,
         val destLat: Double? = null,
         val destLng: Double? = null,
         val destName: String? = null,
         val route: List<GeoPoint> = emptyList(),
-        val maneuverText: String? = null,  // e.g. "Turn left · 400 m"
-        val remainingText: String? = null, // e.g. "186 km"
-        val tilt3d: Boolean = false,       // perspective 3D view (nav heading-up only)
-        val etaPrimary: String? = null,    // big glance value, e.g. "24 min" (nav only)
-        val etaSecondary: String? = null,  // smaller line, e.g. "18 km · 13:32"
-        val gpsWeak: Boolean = false,      // imprecise/slow fix → amber marker + "GPS weak" pill
-        val gpsLost: Boolean = false,      // no fresh fix → grey marker + "GPS lost" pill
+        val maneuverText: String? = null,
+        val remainingText: String? = null,
+        val tilt3d: Boolean = false,
+        val etaPrimary: String? = null,
+        val etaSecondary: String? = null,
+        val gpsWeak: Boolean = false,
+        val gpsLost: Boolean = false,
     )
 
-    private val bgColor   = Color.rgb(229, 227, 223) // Google Maps land colour, behind missing tiles
-    private val routeBlue = Color.rgb(66, 133, 244)  // Google Maps directions blue (#4285F4)
-    private val googleRed = Color.rgb(234, 67, 53)   // Google destination pin red (#EA4335)
+    private val bgColor   = Color.rgb(229, 227, 223)
+    private val routeBlue = Color.rgb(66, 133, 244)
+    private val googleRed = Color.rgb(234, 67, 53)
 
     private val tilePaint  = Paint(Paint.FILTER_BITMAP_FLAG).apply {
-        // Google tiles already carry the right colours/contrast — only a gentle
-        // saturation nudge to help against the dash TFT's daylight wash-out. No
-        // brightness/contrast tricks (those flattened or clipped the map before).
         colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(1.2f) })
     }
     private val routeCasing = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -68,21 +60,22 @@ class MapRenderer(private val tiles: TileProvider) {
     private val bannerPaint  = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(215, 13, 15, 17) }
     private val standbyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(60, 64, 67); textSize = 22f; isFakeBoldText = true }
 
-    // ETA pill (drawn in screen space, bottom-centre, inside the round safe zone)
     private val etaBgPaint     = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(232, 20, 22, 26) }
     private val etaBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(46, 255, 255, 255); style = Paint.Style.STROKE; strokeWidth = 1.5f }
-    private val etaBigPaint    = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(126, 217, 87); textSize = 20f; isFakeBoldText = true; textAlign = Paint.Align.CENTER }   // Google-nav green
+    private val etaBigPaint    = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(126, 217, 87); textSize = 20f; isFakeBoldText = true; textAlign = Paint.Align.CENTER }
     private val etaSmallPaint  = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(196, 201, 208); textSize = 12f; textAlign = Paint.Align.CENTER }
-    // GPS-health pill (top-centre, shown only when the signal is weak/lost)
     private val gpsPillText    = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 13f; isFakeBoldText = true; textAlign = Paint.Align.CENTER }
 
-    // Reused across frames
+    // Faixa de notificação (texto desenhado sobre o mapa — o painel não tem widget nativo pra isso)
+    private val notifTitlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textSize = 19f; isFakeBoldText = true }
+    private val notifTextPaint  = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(210, 214, 220); textSize = 16f }
+
     private val routePath = Path()
     private val riderPath = Path()
     private val tmpRect = RectF()
     private val pillRect = RectF()
-    private val tileSrc = Rect()      // sub-region of an ancestor tile when scaling up
-    private val childDst = RectF()    // quadrant target when scaling children down
+    private val tileSrc = Rect()
+    private val childDst = RectF()
     private val textBounds = Rect()
     private val tiltMatrix = Matrix()
     private val tiltSrc = FloatArray(8)
@@ -95,9 +88,6 @@ class MapRenderer(private val tiles: TileProvider) {
 
         val rotate = f.headingUp
         val tilt = rotate && f.tilt3d
-        // Nav view: bias the rider toward the lower third so the road AHEAD fills the
-        // screen (like Google Maps navigation). 3D pushes it lower still. North-up
-        // view keeps the rider centred.
         val pivotY = if (rotate) (if (tilt) h * 0.74f else h * 0.66f) else h / 2f
 
         val ts = Mercator.TILE_SIZE
@@ -112,10 +102,6 @@ class MapRenderer(private val tiles: TileProvider) {
         if (rotate) {
             canvas.save()
             if (tilt) {
-                // Perspective tilt: warp the flat frame into a trapezoid that converges
-                // toward the top, so the road ahead recedes into the distance (the
-                // Google-Maps 3D look). Near things (rider, bottom) stay ~undistorted;
-                // far things (dest, route ahead) shrink, which is exactly right.
                 val inset = w * 0.18f
                 tiltSrc[0] = 0f;          tiltSrc[1] = 0f
                 tiltSrc[2] = w.toFloat(); tiltSrc[3] = 0f
@@ -131,7 +117,6 @@ class MapRenderer(private val tiles: TileProvider) {
             canvas.rotate(-f.heading, w / 2f, pivotY)
         }
 
-        // ── Tiles (padded when rotating so corners are covered) ──
         val pad = if (rotate) (maxOf(w, h) * 0.45).toInt() else 0
         val txMin = Math.floorDiv((left - pad).toInt(), ts)
         val tyMin = Math.floorDiv((top - pad).toInt(), ts)
@@ -144,7 +129,6 @@ class MapRenderer(private val tiles: TileProvider) {
             drawTileBestEffort(canvas, f.zoom, tx, ty, tmpRect)
         }
 
-        // ── Road route polyline ──
         if (f.route.size >= 2) {
             routePath.reset()
             routePath.moveTo(sx(f.route[0].lng), sy(f.route[0].lat))
@@ -153,27 +137,23 @@ class MapRenderer(private val tiles: TileProvider) {
             canvas.drawPath(routePath, routePaint)
         }
 
-        // ── Destination pin ──
         if (f.destLat != null && f.destLng != null) {
             val dx = sx(f.destLng); val dy = sy(f.destLat)
-            // Google-style red destination pin (white ring + red fill).
             dotPaint.color = Color.WHITE; canvas.drawCircle(dx, dy, 12f, dotPaint)
             dotPaint.color = googleRed; canvas.drawCircle(dx, dy, 9f, dotPaint)
             dotPaint.color = Color.WHITE; canvas.drawCircle(dx, dy, 3.5f, dotPaint)
         }
 
-        // ── Rider marker — colour tracks GPS health (blue good, amber weak, grey lost) ──
         if (f.riderLat != null && f.riderLng != null) {
             val rx = sx(f.riderLng); val ry = sy(f.riderLat)
             val markerColor = when {
-                f.gpsLost -> Color.rgb(150, 154, 160)  // grey: position is stale
-                f.gpsWeak -> Color.rgb(251, 188, 5)    // amber: imprecise
-                else      -> routeBlue                  // blue: good
+                f.gpsLost -> Color.rgb(150, 154, 160)
+                f.gpsWeak -> Color.rgb(251, 188, 5)
+                else      -> routeBlue
             }
             val haloColor = Color.argb(60, Color.red(markerColor), Color.green(markerColor), Color.blue(markerColor))
             dotPaint.color = haloColor; canvas.drawCircle(rx, ry, 17f, dotPaint)
             if (rotate) {
-                // Heading-up: chevron pointing up (travel direction)
                 riderPath.reset()
                 riderPath.moveTo(rx, ry - 11f)
                 riderPath.lineTo(rx - 7f, ry + 7f)
@@ -191,9 +171,6 @@ class MapRenderer(private val tiles: TileProvider) {
 
         if (rotate) canvas.restore()
 
-        // ── ETA pill (screen-space so it stays upright; bottom-centre safe zone) ──
-        // The dash is round, so it's kept narrow and centred. Shows ETA only (time +
-        // arrival clock) — distance lives on the dash's own widget.
         f.etaPrimary?.let { primary ->
             val secondary = f.etaSecondary
             val padH = 18f; val padV = 8f; val gap = 1f
@@ -219,8 +196,6 @@ class MapRenderer(private val tiles: TileProvider) {
             }
         }
 
-        // ── GPS-health pill (top-centre safe zone) — only when degraded, so the rider knows the
-        // marker is imprecise/held rather than wondering why the map stopped tracking ──
         if (f.gpsLost || f.gpsWeak) {
             val label = if (f.gpsLost) "GPS lost" else "GPS weak"
             gpsPillText.color = if (f.gpsLost) googleRed else Color.rgb(251, 188, 5)
@@ -238,55 +213,34 @@ class MapRenderer(private val tiles: TileProvider) {
             canvas.drawText(label, cxp, top + padV - fm.ascent, gpsPillText)
         }
 
-        // No other on-map text overlays — the dash's own widgets show name/turn, and the
-        // round bezel clips anything near the top edge.
-
-        // ── Standby when nothing to show (dark text on the light map bg) ──
-        if (f.riderLat == null && f.destLat == null) {
-            val msg = "NORTHSTAR · waiting for GPS"
-            standbyPaint.getTextBounds(msg, 0, msg.length, textBounds)
-            canvas.drawText(msg, (w - textBounds.width()) / 2f, h / 2f, standbyPaint)
-        }
-    }
-
-    /**
-     * Draws one map tile, never leaving a blank cell on a cache miss. Slippy-map trick:
-     * 1. exact tile if cached (also kicks off the async load);
-     * 2. else scale UP the matching sub-region of a cached lower-zoom ancestor — the level
-     *    we just left is still in memory, so a zoom-IN renders instantly and only sharpens
-     *    once the real tile arrives (no blank flash, which is what made zoom feel slow);
-     * 3. else scale DOWN the four cached higher-zoom children into quadrants (zoom-OUT case).
-     */
-    private fun drawTileBestEffort(canvas: Canvas, z: Int, tx: Int, ty: Int, dst: RectF) {
-        tiles.get(z, tx, ty)?.let { canvas.drawBitmap(it, null, dst, tilePaint); return }
-
-        var up = 1
-        while (up <= 4 && z - up >= 0) {
-            val anc = tiles.getCached(z - up, tx shr up, ty shr up)
-            if (anc != null) {
-                val cells = 1 shl up
-                // Sub-region in the bitmap's OWN pixel space (512 px for hi-DPI tiles, 256 for any
-                // legacy tile) — not the logical TILE_SIZE, or it would sample the wrong quadrant.
-                val sub = anc.width / cells
-                val sxOff = (tx and (cells - 1)) * sub
-                val syOff = (ty and (cells - 1)) * sub
-                tileSrc.set(sxOff, syOff, sxOff + sub, syOff + sub)
-                canvas.drawBitmap(anc, tileSrc, dst, tilePaint)
-                return
+        // ── Faixa de notificação (some sozinha após DISPLAY_MS; desenhada por cima do mapa) ──
+        com.example.northstar.media.NotificationInfoProvider.current.value?.let { notif ->
+            val age = System.currentTimeMillis() - notif.postedAt
+            if (age in 0..com.example.northstar.media.NotificationInfoProvider.DISPLAY_MS) {
+                val padH = 16f; val padV = 11f; val gap = 3f
+                val boxW = w * 0.60f
+                val innerW = boxW - padH * 2
+                val l1 = ellipsize(
+                    if (notif.title.isNotBlank()) "${notif.app} · ${notif.title}" else notif.app,
+                    notifTitlePaint, innerW
+                )
+                val l2 = ellipsize(notif.text, notifTextPaint, innerW)
+                val fm1 = notifTitlePaint.fontMetrics; val fm2 = notifTextPaint.fontMetrics
+                val h1 = fm1.descent - fm1.ascent
+                val h2 = if (l2.isBlank()) 0f else (fm2.descent - fm2.ascent) + gap
+                val boxH = padV * 2 + h1 + h2
+                val leftX = (w - boxW) / 2f
+                val topY = h / 2f - boxH / 2f
+                pillRect.set(leftX, topY, leftX + boxW, topY + boxH)
+                canvas.drawRoundRect(pillRect, 16f, 16f, etaBgPaint)
+                canvas.drawRoundRect(pillRect, 16f, 16f, etaBorderPaint)
+                var baseline = topY + padV - fm1.ascent
+                canvas.drawText(l1, leftX + padH, baseline, notifTitlePaint)
+                if (l2.isNotBlank()) {
+                    baseline += fm1.descent + gap - fm2.ascent
+                    canvas.drawText(l2, leftX + padH, baseline, notifTextPaint)
+                }
             }
-            up++
         }
 
-        val halfW = (dst.right - dst.left) / 2f
-        val halfH = (dst.bottom - dst.top) / 2f
-        for (qx in 0..1) for (qy in 0..1) {
-            val child = tiles.getCached(z + 1, tx * 2 + qx, ty * 2 + qy) ?: continue
-            childDst.set(
-                dst.left + qx * halfW, dst.top + qy * halfH,
-                dst.left + qx * halfW + halfW, dst.top + qy * halfH + halfH,
-            )
-            canvas.drawBitmap(child, null, childDst, tilePaint)
-        }
-        // Deep miss across all levels → the land-colour bg shows through (rare).
-    }
-}
+        // No other on-map text overlays — the
