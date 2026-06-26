@@ -13,6 +13,10 @@ import com.example.northstar.dash.nav.GeoPoint
 
 /**
  * Draws the navigation frame for the Tripper Dash (526 × 300).
+ *
+ * Layers: OSM tiles → route polyline → destination pin → rider marker → ETA pill →
+ * GPS-health pill → notification banner. Paint/Path/Rect objects are reused across
+ * frames to avoid per-frame allocation churn.
  */
 class MapRenderer(private val tiles: TileProvider) {
 
@@ -117,6 +121,7 @@ class MapRenderer(private val tiles: TileProvider) {
             canvas.rotate(-f.heading, w / 2f, pivotY)
         }
 
+        // ── Tiles (padded when rotating so corners are covered) ──
         val pad = if (rotate) (maxOf(w, h) * 0.45).toInt() else 0
         val txMin = Math.floorDiv((left - pad).toInt(), ts)
         val tyMin = Math.floorDiv((top - pad).toInt(), ts)
@@ -129,6 +134,7 @@ class MapRenderer(private val tiles: TileProvider) {
             drawTileBestEffort(canvas, f.zoom, tx, ty, tmpRect)
         }
 
+        // ── Road route polyline ──
         if (f.route.size >= 2) {
             routePath.reset()
             routePath.moveTo(sx(f.route[0].lng), sy(f.route[0].lat))
@@ -137,6 +143,7 @@ class MapRenderer(private val tiles: TileProvider) {
             canvas.drawPath(routePath, routePaint)
         }
 
+        // ── Destination pin ──
         if (f.destLat != null && f.destLng != null) {
             val dx = sx(f.destLng); val dy = sy(f.destLat)
             dotPaint.color = Color.WHITE; canvas.drawCircle(dx, dy, 12f, dotPaint)
@@ -144,6 +151,7 @@ class MapRenderer(private val tiles: TileProvider) {
             dotPaint.color = Color.WHITE; canvas.drawCircle(dx, dy, 3.5f, dotPaint)
         }
 
+        // ── Rider marker — colour tracks GPS health ──
         if (f.riderLat != null && f.riderLng != null) {
             val rx = sx(f.riderLng); val ry = sy(f.riderLat)
             val markerColor = when {
@@ -171,6 +179,7 @@ class MapRenderer(private val tiles: TileProvider) {
 
         if (rotate) canvas.restore()
 
+        // ── ETA pill (screen-space, bottom-centre safe zone) ──
         f.etaPrimary?.let { primary ->
             val secondary = f.etaSecondary
             val padH = 18f; val padV = 8f; val gap = 1f
@@ -196,6 +205,7 @@ class MapRenderer(private val tiles: TileProvider) {
             }
         }
 
+        // ── GPS-health pill (top-centre safe zone) — only when degraded ──
         if (f.gpsLost || f.gpsWeak) {
             val label = if (f.gpsLost) "GPS lost" else "GPS weak"
             gpsPillText.color = if (f.gpsLost) googleRed else Color.rgb(251, 188, 5)
@@ -243,4 +253,49 @@ class MapRenderer(private val tiles: TileProvider) {
             }
         }
 
-        // No other on-map text overlays — the
+        // ── Standby when nothing to show ──
+        if (f.riderLat == null && f.destLat == null) {
+            val msg = "NORTHSTAR · waiting for GPS"
+            standbyPaint.getTextBounds(msg, 0, msg.length, textBounds)
+            canvas.drawText(msg, (w - textBounds.width()) / 2f, h / 2f, standbyPaint)
+        }
+    }
+
+    /** Corta o texto com "…" pra caber na largura disponível. */
+    private fun ellipsize(s: String, p: Paint, maxW: Float): String {
+        if (s.isBlank() || p.measureText(s) <= maxW) return s
+        var end = s.length
+        while (end > 0 && p.measureText(s.substring(0, end) + "…") > maxW) end--
+        return s.substring(0, end).trimEnd() + "…"
+    }
+
+    private fun drawTileBestEffort(canvas: Canvas, z: Int, tx: Int, ty: Int, dst: RectF) {
+        tiles.get(z, tx, ty)?.let { canvas.drawBitmap(it, null, dst, tilePaint); return }
+
+        var up = 1
+        while (up <= 4 && z - up >= 0) {
+            val anc = tiles.getCached(z - up, tx shr up, ty shr up)
+            if (anc != null) {
+                val cells = 1 shl up
+                val sub = anc.width / cells
+                val sxOff = (tx and (cells - 1)) * sub
+                val syOff = (ty and (cells - 1)) * sub
+                tileSrc.set(sxOff, syOff, sxOff + sub, syOff + sub)
+                canvas.drawBitmap(anc, tileSrc, dst, tilePaint)
+                return
+            }
+            up++
+        }
+
+        val halfW = (dst.right - dst.left) / 2f
+        val halfH = (dst.bottom - dst.top) / 2f
+        for (qx in 0..1) for (qy in 0..1) {
+            val child = tiles.getCached(z + 1, tx * 2 + qx, ty * 2 + qy) ?: continue
+            childDst.set(
+                dst.left + qx * halfW, dst.top + qy * halfH,
+                dst.left + qx * halfW + halfW, dst.top + qy * halfH + halfH,
+            )
+            canvas.drawBitmap(child, null, childDst, tilePaint)
+        }
+    }
+}
